@@ -1,0 +1,775 @@
+%
+% exwrapfig.sty
+%
+
+% -------------------------------------------------- declarations
+
+\RequirePackage{expl3}
+\RequirePackage{xparse}
+\ProvidesExplPackage {exwrapfig} {2018/01/01} {0.1.0}
+  {LaTeX wrapfigure extentions written in expl3}
+
+% -------------------------------------------------- messages
+
+\msg_new:nnn { exwrapfig } { wrapfig }
+  {
+    This~package~cannot~be~used~with~the~wrapfig~package; \\
+    loading~exwrapfig~will~abort!
+  }
+\msg_new:nnn { exwrapfig } { place-not-single }
+  {
+    Specified~place~'#1'~is~not~a~single~letter; \\
+    '#2'~will~be~used~instead.
+  }
+\msg_new:nnn { exwrapfig } { place-unknown }
+  {
+    Specified~place~'#1'~is~unknown; \\
+    'r'~will~be~used~instead.
+  }
+\msg_new:nnn { exwrapfig } { collision }
+  { Collision~between~wrapping~environments. }
+\msg_new:nnn { exwrapfig } { conflict }
+  { #1~used~inside~a~conflicting~environment. }
+\msg_new:nnn { exwrapfig } { putting-here }
+  { Putting~#1~here:~\msg_line_context:. }
+\msg_new:nnn { exwrapfig } { start-float }
+  { #1~floats. }
+\msg_new:nnn { exwrapfig } { forced-float }
+  { Stationary~#1~forced~to~float. }
+\msg_new:nnn { exwrapfig } { finish }
+  { Finish~wrapping~text~\msg_line_context:. }
+
+% -------------------------------------------------- utilities
+
+\cs_new:Npn \exwf_unsafe_name:n #1 { #1 }
+\cs_new_eq:NN \exwf_unsafe_command:c \use:c
+
+\cs_new_eq:Nc \exwf_saved_everypar:w { \exwf_unsafe_name:n { everypar } }
+\cs_new_eq:Nc \exwf_saved_par: { \exwf_unsafe_name:n { @@par } }
+\cs_new_eq:Nc \exwf_saved_parshape:w { \exwf_unsafe_name:n { parshape } }
+\cs_new_eq:NN \exwf_saved_parshape_end: \scan_stop:
+
+% -------------------------------------------------- starting
+
+\cs_if_exist:cT { \exwf_unsafe_name:n { c@WF@wrappedlines } }
+  {
+    \msg_warning:nn { exwrapfig } { wrapfig }
+    \file_input_stop:
+  }
+
+% -------------------------------------------------- variables
+
+\dim_new:N \l_exwf_wrapoverhang_dim
+\dim_new:N \g_exwf_ovh_dim
+\dim_new:N \g_exwf_size_dim
+\dim_new:N \g_exwf_adjlw_dim 
+\dim_new:N \g_exwf_adjtlm_dim 
+
+\int_new:N \g_exwf_wrappedlines_int
+\int_new:N \g_exwf_wli_int
+
+\box_new:N \g_exwf_main_box
+
+\tl_const:Nn \c_exwf_places_tl { RLIO }
+
+\tl_new:N \l_exwf_everypar_tl
+\tl_new:N \l_exwf_pspars_tl
+\tl_new:N \g_exwf_wfname_tl
+\tl_new:N \g_exwf_place_tl
+\tl_new:N \g_exwf_wrapil_tl
+\tl_new:N \g_exwf_restore_tolerance_tl
+\tl_new:N \g_exwf_ps_tl
+
+\bool_new:N \g_exwf_float_bool
+
+% -------------------------------------------------- wrappers (dangerous)
+
+\cs_new:Npn \exwf_horizontal_rule:nn #1#2
+  {
+    \exwf_unsafe_command:c { hrule } width #1 height #2 \scan_stop:
+  }
+
+\cs_new:Npn \exwf_insert_everypar:n #1
+  {
+    \exwf_saved_everypar:w = { #1 }
+  }
+
+\cs_new:Npn \exwf_insert_after_assignment:N #1
+  {
+    \exwf_unsafe_command:c { afterassignment } #1
+  }
+
+\cs_new_eq:Nc \l_exwf_parshape_int { \exwf_unsafe_name:n { parshape } }
+
+% -------------------------------------------------- user interface
+
+\NewDocumentCommand \wrapfloat { m O{-1} m O{\wrapoverhang} m }
+  {
+    \tl_set:cn { \exwf_unsafe_name:n { @captype } } { #1 }
+    \tl_gset:Nn \g_exwf_wfname_tl { wrap#1 }
+    \box_if_empty:NF \g_exwf_main_box
+      {
+        \exwf_clear:
+        \msg_warning:nn { exwrapfig } { collision }
+      }
+    \tl_gset:Nx \g_exwf_place_tl { #3 }
+    \tl_if_single:NF \g_exwf_place_tl
+      {
+        \tl_gset:Nf \g_exwf_place_tl { \tl_head:n { #3r } }
+        \msg_warning:nnxx { exwrapfig } { place-not-single } { #3 } { \g_exwf_place_tl }
+      }
+    \exp_args:Nxx \tl_if_in:nnF
+      { \c_exwf_places_tl \tl_lower_case:n { \c_exwf_places_tl } }
+      { \g_exwf_place_tl }
+      {
+        \msg_warning:nnx { exwrapfig } { place-unknown } { \g_exwf_place_tl }
+        \tl_gset:Nn \g_exwf_place_tl { r }
+      }
+    \exp_args:Nxx \tl_if_in:nnTF { \c_exwf_places_tl } { \g_exwf_place_tl }
+      {
+        \bool_gset_true:N \g_exwf_float_bool
+      }
+      {
+        \bool_gset_false:N \g_exwf_float_bool
+      }
+    \cs_if_eq:cNTF { \exwf_unsafe_name:n { parshape } } \exwf_fudge_parshape:
+      {
+        \bool_if:nT { \g_exwf_float_bool }
+          { \msg_warning:nn { exwrapfig } { collision } }
+      }
+      {
+        \cs_if_eq:ccTF { \exwf_unsafe_name:n { par } } { \exwf_unsafe_name:n { @@par } }
+          {
+            \int_compare:nNnT { \l_exwf_parshape_int } > { \c_zero }
+              { \msg_warning:nnx { exwrapfig } { conflict } { \g_exwf_wfname_tl } }
+          }
+          {
+            \msg_warning:nnx { exwrapfig } { conflict } { \g_exwf_wfname_tl }
+          }
+      }
+    \int_gset:Nn \g_exwf_wli_int { #2 }
+    \dim_gset:Nn \g_exwf_ovh_dim { #4 }
+    \vbox_gset:Nw \g_exwf_main_box
+      \dim_set:cn { \exwf_unsafe_name:n { hsize } } { #5 }
+      \dim_compare:nNnTF { \exwf_unsafe_command:c { hsize } } > { \c_zero_dim }
+        {
+          \exwf_unsafe_command:c { @parboxrestore }
+        }
+        {
+          \hbox_set:Nw \l_tmpa_box
+            \cs_set_eq:Nc \exwf_saved_caption:n { \exwf_unsafe_name:n { caption } }
+            \cs_set_eq:cN { \exwf_unsafe_name:n { caption } } \exwf_caption:
+            \exwf_unsafe_command:c { ignorespaces }
+        }
+  }
+
+\NewDocumentCommand \endwrapfloat {}
+  {
+    \dim_compare:nNnTF { \exwf_unsafe_command:c { hsize } } > { \c_zero_dim }
+      {
+        \exwf_unsafe_command:c { par }
+        \exwf_horizontal_rule:nn { \exwf_unsafe_command:c { hsize } } { \c_zero_dim }
+      }
+      {
+        \exwf_unsafe_command:c { unskip }
+        \hbox_set_end:
+        \box_use_drop:N \l_tmpa_box
+      }
+    \vbox_set_end:
+    \exwf_pkg_float_hook:
+    \cs_set:cpn { \exwf_unsafe_name:n { width } } { \box_wd:N \g_exwf_main_box }
+    \dim_set_eq:cN { \exwf_unsafe_name:n { wrapoverhang } } \g_exwf_ovh_dim
+    \dim_gset_eq:Nc \g_exwf_ovh_dim { \exwf_unsafe_name:n { wrapoverhang } }
+    \dim_compare:nNnT
+      { \box_ht:N \g_exwf_main_box } > { \exwf_unsafe_command:c { topskip } }
+      { \box_set_ht:Nn \g_exwf_main_box { \c_zero_dim } }
+    \dim_compare:nNnT { \box_ht:N \g_exwf_main_box } < { 0.5pt }
+      {
+        \vbox_gset_top:Nn \g_exwf_main_box
+          {
+            \skip_vertical:n { -1.4ex }
+            \vbox_unpack:N \g_exwf_main_box
+          }
+      }
+    \dim_gset:Nn \g_exwf_size_dim
+      {
+        \box_dp:N \g_exwf_main_box
+          + 1.5 \exwf_unsafe_command:c { baselineskip }
+          + 2 \exwf_unsafe_command:c { intextsep }
+      }
+    \group_insert_after:N \exwf_start_floating:
+    \bool_if:nF { \g_exwf_float_bool }
+      {
+        \if_mode_horizontal:
+          \group_begin:
+            \exwf_unsafe_command:c { unskip }
+            \dim_set:cn { \exwf_unsafe_name:n { parfillskip } } { \c_zero_dim }
+            \exwf_unsafe_command:c { par }
+            \skip_vertical:n { - \exwf_unsafe_command:c { parskip } }
+          \group_end:
+          \exp_args:Nc \group_insert_after:N { \exwf_unsafe_name:n { noindent } }
+        \fi:
+      }
+    \exwf_unsafe_command:c { global } \exwf_unsafe_command:c { @ignoretrue }
+  }
+
+\cs_set_eq:cN { \exwf_unsafe_name:n { wrapoverhang } } \l_exwf_wrapoverhang_dim
+
+\NewDocumentCommand \wrapfigure {} { \wrapfloat{figure} }
+\NewDocumentCommand \wraptable {} { \wrapfloat{table} }
+
+\NewDocumentCommand \endwrapfigure {} { \endwrapfloat }
+\NewDocumentCommand \endwraptable {} { \endwrapfloat }
+
+% -------------------------------------------------- internal functions
+
+\cs_new:Npn \exwf_caption:
+  {
+    \scan_stop:
+    \dim_compare:nNnTF { \exwf_unsafe_command:c { hsize } } > { \c_zero_dim }
+      {
+        \cs_set_eq:cN { \exwf_unsafe_name:n { caption } } \exwf_saved_caption:n
+      }
+      {
+        \exwf_unsafe_command:c { unskip }
+        \c_group_end_token
+        \dim_set:cn { \exwf_unsafe_name:n { hsize } } { \box_wd:N \l_tmpa_box }
+        \exwf_unsafe_command:c { @parboxrestore }
+        \box_use_drop:N \l_tmpa_box
+      }
+    \exwf_unsafe_command:c { caption }
+  }
+
+\cs_new:Npn \exwf_fltmes:
+  {
+    \bool_if:nTF { \g_exwf_float_bool }
+      {
+        \msg_info:nnx { exwrapfig } { start-float } { \g_exwf_wfname_tl }
+      }
+      {
+        \msg_warning:nnx { exwrapfig } { forced-float } { \g_exwf_wfname_tl }
+      }
+  }
+
+\cs_new:Npn \exwf_start_floating:
+  {
+    \tl_set:Nf \l_exwf_everypar_tl
+      { \exwf_unsafe_command:c { the } \exwf_unsafe_command:c { everypar } }
+    \cs_set_eq:cN { \exwf_unsafe_name:n { everypar } } \l_exwf_everypar_tl
+    \exwf_insert_everypar:n
+      {
+        \box_if_empty:NF \g_exwf_main_box { \exwf_float_hand: }
+        \tl_use:N \l_exwf_everypar_tl
+        \exwf_wrap_hand:
+      }
+  }
+
+\cs_new:Npn \exwf_float_hand:
+  {
+    \cs_if_eq:cNTF { \exwf_unsafe_name:n { parshape } } \exwf_fudge_parshape:
+      {
+        \exwf_fltmes:
+      }
+      {
+        \cs_if_eq:cNTF { \exwf_unsafe_name:n { par } } \exwf_saved_par:
+          {
+            \int_compare:nNnTF { \l_exwf_parshape_int } = { \c_zero }
+              {
+                \dim_compare:nNnTF
+                  { \exwf_unsafe_command:c { hangindent } } = { \c_zero_dim }
+                  {
+                    \box_set_to_last:N \l_tmpa_box
+                    \group_begin:
+                      \exwf_saved_par:
+                      \exwf_insert_everypar:n {}
+                      \exwf_put_fig_maybe:
+                    \group_end:
+                    \box_if_empty:NF \l_tmpa_box { \box_use_drop:N \l_tmpa_box }
+                  }
+                  {
+                    \exwf_fltmes:
+                  }
+              }
+              {
+                \exwf_fltmes:
+              }
+          }
+          {
+            \exwf_fltmes:
+          }
+      }
+  }
+
+\cs_new:Npn \exwf_put_fig_maybe:
+  {
+    \if_mode_inner:
+      \skip_vertical:n { - \exwf_unsafe_command:c { parskip } }
+      \bool_gset_false:N \g_exwf_float_bool
+      \dim_set_eq:cc { \exwf_unsafe_name:n { pagetotal } } { \exwf_unsafe_name:n { maxdimen } }
+    \else:
+      \dim_set_eq:Nc \l_tmpa_dim { \exwf_unsafe_name:n { pagedepth } }
+      \skip_vertical:n { ( \l_tmpa_dim + \exwf_unsafe_command:c { parskip } ) * -1 }
+      \exwf_unsafe_command:c { penalty } \exwf_unsafe_command:c { interlinepenalty }
+      \dim_set:Nn \l_tmpb_dim
+        { \exwf_unsafe_command:c { pagegoal } - \exwf_unsafe_command:c { pagetotal } }
+      \dim_compare:nNnTF { \l_tmpb_dim } < { \c_zero_dim }
+        {
+          \bool_gset_false:N \g_exwf_float_bool
+          \dim_compare:nNnT
+            { \dim_abs:n { \l_tmpb_dim } } < { \exwf_unsafe_command:c { pageshrink } }
+            { \exwf_unsafe_command:c { pagebreak } }
+        }
+        {
+          \dim_compare:nNnTF { \g_exwf_size_dim } > { \l_tmpb_dim }
+            {
+              \bool_if:nTF { \g_exwf_float_bool }
+                {
+                  \dim_set:cn { \exwf_unsafe_name:n { dimen@ } }
+                    { 0.5 \exwf_unsafe_command:c { baselineskip } }
+                }
+                {
+                  \dim_set:cn { \exwf_unsafe_name:n { dimen@ } }
+                    { 2 \exwf_unsafe_command:c { baselineskip } }
+                }
+              \dim_compare:nNnT
+                { \exwf_unsafe_command:c { pagestretch } }
+                  > { \exwf_unsafe_command:c { dimen@ } }
+                {
+                  \dim_set:cn { \exwf_unsafe_name:n { dimen@ } }
+                    { \exwf_unsafe_command:c { pagestretch } }
+                }
+              \dim_compare:nNnT
+                { \exwf_unsafe_command:c { pagefilstretch } }
+                  > { \exwf_unsafe_command:c { dimen@ } }
+                {
+                  \dim_set:cn { \exwf_unsafe_name:n { dimen@ } } { \l_tmpb_dim }
+                }
+              \dim_compare:nNnT
+                { \exwf_unsafe_command:c { pagefillstretch } }
+                  > { \exwf_unsafe_command:c { dimen@ } }
+                {
+                  \dim_set:cn { \exwf_unsafe_name:n { dimen@ } } { \l_tmpb_dim }
+                }
+              \dim_add:cn { \exwf_unsafe_name:n { dimen@ } }
+                { 0.5 \exwf_unsafe_command:c { baselineskip } }
+              \dim_compare:nNnT { \exwf_unsafe_command:c { dimen@ } } > { \l_tmpb_dim }
+                {
+                  \bool_gset_false:N \g_exwf_float_bool
+                  \exwf_unsafe_command:c { pagebreak }
+                }
+            }
+            {
+              \bool_gset_false:N \g_exwf_float_bool
+            }
+        }
+      \skip_vertical:n { \l_tmpa_dim }
+    \fi:
+    \exwf_unsafe_command:c { noindent }
+    \bool_if:nTF { \g_exwf_float_bool }
+      {
+        \exwf_fltmes:
+      }
+      {
+        \msg_info:nnx { exwrapfig } { putting-here } { \g_exwf_wfname_tl }
+        \exwf_unsafe_command:c { if@twoside }
+          \int_set:Nn \l_tmpa_int { \exwf_unsafe_command:c { c@page } }
+        \else:
+          \int_set:Nn \l_tmpa_int { \c_one }
+        \fi:
+        \tl_gset:Nx \g_exwf_place_tl { \tl_lower_case:n { \g_exwf_place_tl } }
+        \int_if_odd:nTF { \l_tmpa_int }
+          {
+            \tl_greplace_once:Nnn \g_exwf_place_tl { i } { l }
+            \tl_greplace_once:Nnn \g_exwf_place_tl { o } { r }
+          }
+          {
+            \tl_greplace_once:Nnn \g_exwf_place_tl { i } { r }
+            \tl_greplace_once:Nnn \g_exwf_place_tl { o } { l }
+          }
+        \hbox_to_zero:n
+          {
+            \dim_set:Nn \l_tmpa_dim
+              {
+                \box_wd:N \g_exwf_main_box
+                  - \g_exwf_ovh_dim
+                  + \exwf_unsafe_command:c { columnsep }
+              }
+            \dim_set:Nn \l_tmpb_dim
+              {
+                \exwf_unsafe_command:c { hsize } - \l_tmpa_dim
+              }
+            \dim_gset_eq:NN \g_exwf_adjlw_dim \l_tmpa_dim
+            \tl_if_in:NnTF \g_exwf_place_tl { l }
+              {
+                \exwf_unsafe_command:c { hss }
+                \tl_set:Nn \l_tmpa_tl
+                  {
+                    \exwf_unsafe_command:c { kern } \exwf_unsafe_command:c { columnsep }
+                  }
+              }
+              {
+                \dim_zero:N \l_tmpa_dim
+                \exwf_unsafe_command:c { kern } \l_tmpb_dim
+                \exwf_unsafe_command:c { kern } \exwf_unsafe_command:c { columnsep }
+                \tl_set:Nn \l_tmpa_tl { \exwf_unsafe_command:c { hss } }
+              }
+            \dim_compare:nNnTF { \l_tmpb_dim } < { \exwf_unsafe_command:c { hsize } }
+              {
+                \tl_gset:Nx \g_exwf_wrapil_tl
+                  {
+                    \dim_use:N \l_tmpa_dim ~ \dim_use:N \l_tmpb_dim
+                  }
+                \dim_gset_eq:NN \g_exwf_adjtlm_dim \l_tmpa_dim
+              }
+              {
+                \tl_gset:Nx \g_exwf_wrapil_tl
+                  {
+                    \dim_use:N \c_zero_dim ~ \dim_use:c { \exwf_unsafe_name:n { hsize } }
+                  }
+                \dim_gzero:N \g_exwf_adjlw_dim
+                \dim_gzero:N \g_exwf_adjtlm_dim
+              }
+              \dim_compare:nNnTF { \exwf_unsafe_command:c { pagetotal } } = { \c_zero_dim }
+                {
+                  \dim_gsub:Nn \g_exwf_size_dim { \exwf_unsafe_command:c { intextsep } }
+                }
+                {
+                  \hbox_gset:Nn \g_exwf_main_box
+                    {
+                      \box_move_down:nn
+                        { \exwf_unsafe_command:c { intextsep } }
+                        { \box_use_drop:N \g_exwf_main_box }
+                    }
+                }
+              \box_set_dp:Nn \g_exwf_main_box { \c_zero_dim }
+              \box_use_drop:N \g_exwf_main_box
+              \tl_use:N \l_tmpa_tl
+          }
+        \group_insert_after:N \exwf_start_wrapping:
+      }
+  }
+
+\cs_new:Npn \exwf_start_wrapping:
+  {
+    \int_compare:nNnTF { \g_exwf_wli_int } < { \c_zero }
+      {
+        \int_gset:Nn \g_exwf_wrappedlines_int
+          {
+            \fp_eval:n
+              {
+                ceil (
+                  \dim_ratio:nn
+                    { \g_exwf_size_dim + 1.1 \exwf_unsafe_command:c { baselineskip } }
+                    { \exwf_unsafe_command:c { baselineskip } }
+                ) - 1
+              }
+          }
+      }
+      {
+        \int_gset_eq:NN \g_exwf_wrappedlines_int \g_exwf_wli_int
+        \int_gincr:N \g_exwf_wli_int
+      }
+    \int_compare:nNnT { \g_exwf_wrappedlines_int } > { \c_one }
+      {
+        \cs_set_eq:cN { \exwf_unsafe_name:n { parshape } } \exwf_fudge_parshape:
+        \tl_clear:N \l_exwf_pspars_tl
+        \cs_set_eq:Nc \exwf_latex_par: { \exwf_unsafe_name:n { par } }
+        \cs_set:cpn { \exwf_unsafe_name:n { @setpar } } ##1
+          { \cs_set:Npn \exwf_latex_par: { ##1 } }
+        \cs_set:cpn { \exwf_unsafe_name:n { par } }
+          { \exwf_unsafe_command:c { @par } }
+        \cs_set_eq:cN { \exwf_unsafe_name:n { @par } } \exwf_mypar:
+        \tl_gset:Nx \g_exwf_restore_tolerance_tl
+          {
+            \exwf_unsafe_command:c { tolerance }
+            \int_use:c { \exwf_unsafe_name:n { tolerance } }
+          }
+        \int_set:cn { \exwf_unsafe_name:n { tolerance } } { 9999 }
+        \dim_sub:cn { \exwf_unsafe_name:n { linewidth } } { \g_exwf_adjlw_dim }
+        \dim_add:cn { \exwf_unsafe_name:n { @totalleftmargin } } { \g_exwf_adjtlm_dim }
+      }
+  }
+
+\cs_new:Npn \exwf_wrap_hand:
+  {
+    \int_compare:nNnTF { \g_exwf_wrappedlines_int } < { \c_two }
+      {
+        \exwf_finale:
+      }
+      {
+        \group_begin:
+          \int_set_eq:NN \l_tmpa_int \c_one
+          \tl_gclear:N \g_exwf_ps_tl
+          \int_while_do:nNnn { \l_tmpa_int } < { \g_exwf_wrappedlines_int }
+            {
+              \tl_gput_right:Nn \g_exwf_ps_tl { \g_exwf_wrapil_tl }
+              \int_incr:N \l_tmpa_int
+            }
+        \group_end:
+        \tl_if_empty:NTF \l_exwf_pspars_tl
+          {
+            \exwf_saved_parshape:w
+              \g_exwf_wrappedlines_int \g_exwf_ps_tl \c_exwf_noil_tl
+            \exwf_saved_parshape_end: 
+          }
+          {
+            \exwf_modps:
+          }
+      }
+  }
+
+\cs_new:Npn \exwf_mypar:
+  {
+    \scan_stop:
+    \exwf_latex_par:
+    \int_compare:nNnT { \l_exwf_parshape_int } = { \c_zero }
+      { \tl_clear:N \l_exwf_pspars_tl }
+    \int_gsub:Nn \g_exwf_wrappedlines_int { \exwf_unsafe_command:c { prevgraf } }
+    \int_set:cn { \exwf_unsafe_name:n { prevgraf } } { \c_zero }
+    \int_compare:nNnT { \g_exwf_wrappedlines_int } < { \c_two }
+      {
+        \exwf_finale:
+      }
+  }
+
+\cs_new:Npn \exwf_modps:
+  {
+    \group_begin:
+      \exwf_insert_after_assignment:N { \l_tmpb_dim }
+      \dim_set:Nn \l_tmpa_dim { \l_exwf_pspars_tl }
+      \dim_sub:Nn \l_tmpa_dim { \g_exwf_adjtlm_dim }
+      \dim_sub:Nn \l_tmpb_dim { \g_exwf_adjlw_dim }
+      \tl_gset_eq:NN \g_exwf_wrapil_tl \l_exwf_pspars_tl % Is this ok with gset?
+      \tl_set:Nx \l_tmpb_tl
+        {
+          \exwf_saved_parshape:w
+            \g_exwf_wrappedlines_int \g_exwf_ps_tl
+            \dim_use:N \l_tmpa_dim
+            \dim_use:N \l_tmpb_dim
+          \exwf_saved_parshape_end:
+        }
+      \exp_after:wN
+    \group_end:
+    \tl_use:N \l_tmpb_tl
+  }
+
+\cs_set_eq:cc { \exwf_unsafe_name:n { @@setpar } } { \exwf_unsafe_name:n { @setpar } }
+\tl_const:Nn \c_exwf_noil_tl { \c_zero_dim \exwf_unsafe_command:c { hsize } }
+
+\cs_new:Npn \exwf_fudge_parshape:
+  {
+    \scan_stop:
+    \int_compare:nNnTF { \g_exwf_wrappedlines_int } < { \c_two }
+      {
+        \exwf_finale:
+      }
+      {
+        \exwf_insert_after_assignment:N \exwf_fudge_parshape_i:
+        \exwf_unsafe_command:c { fam }
+      }
+  }
+
+\cs_new:Npn \exwf_fudge_parshape_i:
+  {
+    \int_compare:nNnTF { \exwf_unsafe_command:c { fam } } = { \c_one }
+      {
+        \exwf_fudge_parshape_ii:NN
+      }
+      {
+        \msg_warning:nnx { exwrapfig } { conflict } { \g_exwf_wfname_tl }
+        \exwf_saved_parshape:w \exwf_unsafe_command:c { fam } \exwf_saved_parshape_end:
+      }
+  }
+
+\cs_new:Npn \exwf_fudge_parshape_ii:NN #1#2
+  {
+    \group_begin:
+      \dim_set:cn { \exwf_unsafe_name:n { delimitershortfall } } { #1 }
+      \dim_set:cn { \exwf_unsafe_name:n { nulldelimiterspace } } { #2 }
+      \exp_after:wN
+    \group_end:
+    \tl_set:Nx \l_exwf_pspars_tl
+      {
+        \dim_use:c { \exwf_unsafe_name:n { delimitershortfall } } ~
+        \dim_use:c { \exwf_unsafe_name:n { nulldelimiterspace } }
+      }
+    \exwf_wrap_hand:
+  }
+
+\cs_new:Npn \exwf_finale:
+  {
+    \cs_if_eq:cNT { \exwf_unsafe_name:n { parshape } } \exwf_fudge_parshape:
+      {
+        \tl_use:N \g_exwf_restore_tolerance_tl
+        \cs_set_eq:cc { \exwf_unsafe_name:n { @setpar } } { \exwf_unsafe_name:n { @@setpar } }
+        \cs_set_eq:cN { \exwf_unsafe_name:n { par } } \exwf_saved_par:
+        \dim_add:cn { \exwf_unsafe_name:n { linewidth } } { \g_exwf_adjlw_dim }
+        \dim_sub:cn { \exwf_unsafe_name:n { @totalleftmargin } } { \g_exwf_adjtlm_dim }
+        \msg_info:nn { exwrapfig } { finish }
+        \cs_if_eq:ccTF { \exwf_unsafe_name:n { par } } { \exwf_unsafe_name:n { @@par } }
+          {
+            \cs_set:cpn { \exwf_unsafe_name:n { @par } }
+              {
+                \cs_set_eq:cc { \exwf_unsafe_name:n { par } } { \exwf_unsafe_name:n { @@par } }
+                \exwf_unsafe_command:c { par }
+              }
+          }
+          {
+            \cs_set_eq:cN { \exwf_unsafe_name:n { @par } } \exwf_saved_par:
+          }
+        \cs_set_eq:cN { \exwf_unsafe_name:n { parshape } } \exwf_saved_parshape:w
+        \tl_if_empty:NTF \l_exwf_pspars_tl
+          {
+            \exwf_saved_parshape:w \c_zero \exwf_saved_parshape_end:
+          }
+          {
+            \exwf_saved_parshape:w \c_one \l_exwf_pspars_tl \exwf_saved_parshape_end:
+          }
+      }
+    \box_if_empty:NT \g_exwf_main_box
+      {
+        \cs_if_eq:cNT { \exwf_unsafe_name:n { everypar } } \l_exwf_everypar_tl
+          {
+            \cs_set_eq:cN { \exwf_unsafe_name:n { everypar } } \exwf_saved_everypar:w
+            \exp_args:No \exwf_insert_everypar:n { \l_exwf_everypar_tl }
+          }
+      }
+  }
+
+\cs_new:Npn \exwf_clear:
+  {
+    \exwf_unsafe_command:c { par }
+    \box_if_empty:NF \g_exwf_main_box
+      {
+        \skip_vertical:n { \exwf_unsafe_command:c { bigskipamount } }
+        \box_use_drop:N \g_exwf_main_box
+        \cs_set_eq:cN { \exwf_unsafe_name:n { everypar } } \exwf_saved_everypar:w
+        \exp_args:No \exwf_insert_everypar:n { \l_exwf_everypar_tl }
+      }
+    \int_gzero:N \g_exwf_wrappedlines_int
+    \exwf_finale:
+  }
+
+% -------------------------------------------------- patches & compatibility
+
+\group_begin:
+  \cs_set_eq:Nc \l_tmpa_tl { \exwf_unsafe_name:n { @arrayparboxrestore } }
+  \exp_args:NNo \tl_const:Nn \c_saved_array_parbox_restore_tl { \l_tmpa_tl }
+  \cs_set_eq:Nc \l_tmpb_tl { \exwf_unsafe_name:n { clearpage } }
+  \exp_args:NNo \tl_const:Nn \c_saved_clearpage_tl { \l_tmpb_tl }
+\group_end:
+
+\cs_set:cpn { \exwf_unsafe_name:n { @arrayparboxrestore } }
+  {
+    \cs_set_eq:cN { \exwf_unsafe_name:n { everypar } } \exwf_saved_everypar:w
+    \exp_args:No \exwf_insert_everypar:n { \l_exwf_everypar_tl }
+    \cs_set_eq:cN { \exwf_unsafe_name:n { parshape } } \exwf_saved_parshape:w
+    \cs_set_eq:cc { \exwf_unsafe_name:n { @setpar } } { \exwf_unsafe_name:n { @@setpar } }
+    \tl_use:N \c_saved_array_parbox_restore_tl
+  }
+
+\cs_set:cpn { \exwf_unsafe_name:n { clearpage } }
+  {
+    \exwf_unsafe_command:c { protect }
+    \exwf_clear:
+    \tl_use:N \c_saved_clearpage_tl
+  }
+
+% -------------------------------------------------- supports for other packages
+
+\cs_if_exist:cF { \exwf_unsafe_name:n { @capwidth } }
+  {
+    \cs_set_eq:cc { \exwf_unsafe_name:n { @capwidth } } { \exwf_unsafe_name:n { hsize } }
+  }
+
+\cs_new:Npn \exwf_pkg_float_hook: {}
+
+\cs_if_exist:cT { \exwf_unsafe_name:n { newfloat } }
+  {
+    \cs_if_exist:cTF { \exwf_unsafe_name:n { restylefloat } }
+      {
+        % support package float
+        \cs_if_exist:cTF { \exwf_unsafe_name:n { float@restyle } }
+          {
+            % newer versions
+            \cs_new_eq:Nc \exwf_saved_float_restyle:n
+              { \exwf_unsafe_name:n { float@restyle } }
+            \cs_set:cpn { \exwf_unsafe_name:n { float@restyle } } #1
+              {
+                \exwf_saved_float_restyle:n { #1 }
+                \cs_set:cpn { wrap#1 }
+                  {
+                    \cs_set:cpn { \exwf_unsafe_name:n { @captype } } { #1 }
+                    \exwf_unsafe_command:c { fst@#1 }
+                    \cs_set:Npn \exwf_pkg_float_hook:
+                      {
+                        \cs_set_eq:cN { \exwf_unsafe_name:n { @currbox } } \g_exwf_main_box
+                        \exwf_unsafe_command:c { global }
+                        \exwf_unsafe_command:c { setbox } \g_exwf_main_box
+                        \exwf_unsafe_command:c { float@makebox } { \box_wd:N \g_exwf_main_box }
+                      }
+                    \wrapfloat { #1 }
+                  }
+                \cs_set_eq:cN { endwrap#1 } \endwrapfigure
+              }
+          }
+          {
+            % older versions
+            \cs_new_eq:Nc \exwf_saved_float_restyle:n
+              { \exwf_unsafe_name:n { restylefloat } }
+            \cs_set:cpn { \exwf_unsafe_name:n { restylefloat } } #1
+              {
+                \exwf_saved_float_restyle:n { #1 }
+                \cs_set:cpn { wrap#1 }
+                  {
+                    \cs_set:cpn { \exwf_unsafe_name:n { @captype } } { #1 }
+                    \exwf_unsafe_command:c { fst@#1 }
+                    \cs_set:Npn \exwf_pkg_float_hook:
+                      {
+                        \cs_set_eq:cN { \exwf_unsafe_name:n { @currbox } }
+                          \g_exwf_main_box
+                        \dim_set:cn { \exwf_unsafe_name:n { columnwidth } }
+                          { \box_wd:N \g_exwf_main_box }
+                        \exwf_unsafe_command:c { global }
+                        \exwf_unsafe_command:c { setbox } \g_exwf_main_box
+                        \exwf_unsafe_command:c { float@makebox }
+                          { \box_wd:N \g_exwf_main_box }
+                      }
+                    \wrapfloat { #1 }
+                  }
+                \cs_set_eq:cN { endwrap#1 } \endwrapfigure
+              }
+          }
+      }
+      {
+        % support class memoir
+        \exwf_unsafe_command:c { @ifclassloaded } { memoir }
+          {
+            \cs_new_eq:Nc \exwf_saved_newfloat:wnnn
+              { \exwf_unsafe_name:n { \token_to_str:N \newfloat } }
+            \cs_set:cpn { \exwf_unsafe_name:n { \token_to_str:N \newfloat } } [#1]#2#3#4
+            {
+              \exwf_saved_newfloat:wnnn [{#1}] { #2 } { #3 } { #4 }
+              \newenvironment { wrap#2 } { \wrapfloat { #2 } } { \endwrapfloat }
+            }
+          }
+          {
+            % do nothing at this point
+          }
+      }
+  }
+
+% support package ccaption
+\cs_if_exist:cT { \exwf_unsafe_name:n { \token_to_str:N \newfloatlist } }
+  {
+    \cs_new_eq:Nc \exwf_saved_newfloatlist:wnnnn
+      { \exwf_unsafe_name:n { \token_to_str:N \newfloatlist } }
+    \cs_set:cpn { \exwf_unsafe_name:n { \token_to_str:N \newfloat } } [#1]#2#3#4#5
+      {
+        \exwf_saved_newfloatlist:wnnnn [{#1}] { #2 } { #3 } { #4 } { #5 }
+        \newenvironment { wrap#2 } { \wrapfloat { #2 } } { \endwrapfloat }
+      }
+  }
+
+% vim: ft=expl3 nospell:
+%% EOF
