@@ -259,7 +259,7 @@
     \exwf_insert_everypar:n
       {
         \box_if_empty:NF \g_exwf_main_box { \exwf_float_hand: }
-        \tl_use:N \l_exwf_everypar_tl
+        \exp_not:N \l_exwf_everypar_tl
         \exwf_wrap_hand:
       }
   }
