@@ -99,6 +99,8 @@
     \exwf_unsafe_command:c { afterassignment } #1
   }
 
+\cs_new_eq:Nc \exwf_use_everypar:w { \exwf_unsafe_name:n { the } }
+
 \cs_new_eq:Nc \l_exwf_parshape_int { \exwf_unsafe_name:n { parshape } }
 
 % -------------------------------------------------- user interface
@@ -253,8 +255,8 @@
 
 \cs_new:Npn \exwf_start_floating:
   {
-    \tl_set:Nf \l_exwf_everypar_tl
-      { \exwf_unsafe_command:c { the } \exwf_unsafe_command:c { everypar } }
+    \tl_set:No \l_exwf_everypar_tl
+      { \exwf_use_everypar:w \exwf_unsafe_command:c { everypar } }
     \cs_set_eq:cN { \exwf_unsafe_name:n { everypar } } \l_exwf_everypar_tl
     \exwf_insert_everypar:n
       {
