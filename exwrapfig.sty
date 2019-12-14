@@ -72,7 +72,8 @@
 
 \tl_const:Nn \c_exwf_places_tl { RLIO }
 
-\tl_new:N \l_exwf_everypar_tl
+\newtoks \l_exwf_everypar_toks
+
 \tl_new:N \l_exwf_pspars_tl
 \tl_new:N \g_exwf_wfname_tl
 \tl_new:N \g_exwf_place_tl
@@ -256,13 +257,12 @@
 
 \cs_new:Npn \exwf_start_floating:
   {
-    \tl_set:No \l_exwf_everypar_tl
-      { \exwf_use_everypar:w \exwf_unsafe_command:c { everypar } }
-    \cs_set_eq:cN { \exwf_unsafe_name:n { everypar } } \l_exwf_everypar_tl
+    \exp_args:No \l_exwf_everypar_toks { \the \everypar }
+    \cs_set_eq:NN \everypar \l_exwf_everypar_toks
     \exwf_insert_everypar:n
       {
         \box_if_empty:NF \g_exwf_main_box { \exwf_float_hand: }
-        \exp_not:o { \l_exwf_everypar_tl }
+        \the \l_exwf_everypar_toks
         \exwf_wrap_hand:
       }
   }
@@ -632,10 +632,10 @@
       }
     \box_if_empty:NT \g_exwf_main_box
       {
-        \cs_if_eq:cNT { \exwf_unsafe_name:n { everypar } } \l_exwf_everypar_tl
+        \cs_if_eq:cNT { \exwf_unsafe_name:n { everypar } } \l_exwf_everypar_toks
           {
             \cs_set_eq:cN { \exwf_unsafe_name:n { everypar } } \exwf_saved_everypar:w
-            \exp_args:No \exwf_insert_everypar:n { \l_exwf_everypar_tl }
+            \exp_args:No \exwf_insert_everypar:n { \the \l_exwf_everypar_toks }
           }
       }
   }
@@ -648,7 +648,7 @@
         \skip_vertical:n { \exwf_unsafe_command:c { bigskipamount } }
         \box_use_drop:N \g_exwf_main_box
         \cs_set_eq:cN { \exwf_unsafe_name:n { everypar } } \exwf_saved_everypar:w
-        \exp_args:No \exwf_insert_everypar:n { \l_exwf_everypar_tl }
+        \exp_args:No \exwf_insert_everypar:n { \the \l_exwf_everypar_toks }
       }
     \int_gzero:N \g_exwf_wrappedlines_int
     \exwf_finale:
@@ -666,7 +666,7 @@
 \cs_set:cpn { \exwf_unsafe_name:n { @arrayparboxrestore } }
   {
     \cs_set_eq:cN { \exwf_unsafe_name:n { everypar } } \exwf_saved_everypar:w
-    \exp_args:No \exwf_insert_everypar:n { \l_exwf_everypar_tl }
+    \exp_args:No \exwf_insert_everypar:n { \the \l_exwf_everypar_toks }
     \cs_set_eq:cN { \exwf_unsafe_name:n { parshape } } \exwf_saved_parshape:w
     \cs_set_eq:cc { \exwf_unsafe_name:n { @setpar } } { \exwf_unsafe_name:n { @@setpar } }
     \tl_use:N \c_saved_array_parbox_restore_tl
