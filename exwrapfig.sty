@@ -262,7 +262,7 @@
     \exwf_insert_everypar:n
       {
         \box_if_empty:NF \g_exwf_main_box { \exwf_float_hand: }
-        \exp_not:N \l_exwf_everypar_tl
+        \exp_not:o { \l_exwf_everypar_tl }
         \exwf_wrap_hand:
       }
   }
@@ -448,6 +448,7 @@
               \box_use_drop:N \g_exwf_main_box
               \tl_use:N \l_tmpa_tl
           }
+        \box_gclear:N \g_exwf_main_box  % make sure to clear the main box
         \group_insert_after:N \exwf_start_wrapping:
       }
   }
@@ -470,7 +471,7 @@
       }
       {
         \int_gset_eq:NN \g_exwf_wrappedlines_int \g_exwf_wli_int
-        \int_gincr:N \g_exwf_wli_int
+        \int_gincr:N \g_exwf_wrappedlines_int
       }
     \int_compare:nNnT { \g_exwf_wrappedlines_int } > { \c_one }
       {
